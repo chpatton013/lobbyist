@@ -1,10 +1,3 @@
-"""
-POST    /secret         [['expire_ts']]
-GET     /secret/<name>
-PATCH   /secret/<name>  [['value' if password; 'expire_ts' if not password]]
-DELETE  /secret/<name>  [[if not password]]
-"""
-
 import datetime
 import logging
 
@@ -21,12 +14,12 @@ def create_secret():
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
-    access_token = validation.validate_authentication_bearer()
+    auth_access_token_value = validation.validate_authentication_bearer()
     expire_ts = validation.optional_field_expire_ts("expire_ts")
 
     response = secret.create_secret(
         create_ts=server_ts,
-        access_token_value=access_token,
+        auth_access_token_value=auth_access_token_value,
         expire_ts=expire_ts,
     )
 
@@ -34,18 +27,57 @@ def create_secret():
 
 
 @APP.route("/secret/<name>", methods=["GET"])
-def read_secret(name: str):
+def read_secret(secret_name: str):
     logging.debug("views.secret.read_secret")
 
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
-    access_token = validation.validate_authentication_bearer()
+    auth_access_token_value = validation.validate_authentication_bearer()
 
     response = secret.read_secret(
         server_ts=server_ts,
-        name=name,
-        access_token_value=access_token,
+        auth_access_token_value=auth_access_token_value,
+        secret_name=secret_name,
+    )
+
+    return (response.into_dict(), 200)
+
+
+@APP.route("/secret", methods=["PATCH"])
+def update_secret():
+    logging.debug("views.secret.update_secret")
+
+    server_ts = datetime.datetime.utcnow()
+
+    validation.validate_accept()
+    auth_access_token_value = validation.validate_authentication_bearer()
+    secret_value = validation.optional_field_expire_ts("value")
+    expire_ts = validation.optional_field_expire_ts("expire_ts")
+
+    response = secret.update_secret(
+        server_ts=server_ts,
+        auth_access_token_value=auth_access_token_value,
+        secret_value=secret_value,
+        expire_ts=expire_ts,
+    )
+
+    return (response.into_dict(), 200)
+
+
+@APP.route("/secret/<name>", methods=["DELETE"])
+def delete_secret(secret_name: str):
+    logging.debug("views.secret.delete_secret")
+
+    server_ts = datetime.datetime.utcnow()
+
+    validation.validate_accept()
+    auth_access_token_value = validation.validate_authentication_bearer()
+
+    response = secret.delete_secret(
+        server_ts=server_ts,
+        auth_access_token_value=auth_access_token_value,
+        secret_name=secret_name,
     )
 
     return (response.into_dict(), 200)

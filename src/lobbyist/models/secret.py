@@ -13,6 +13,7 @@ class Secret(Base, OptionallyExpiryMixin):
     hash = peewee.CharField(max_length=255)
     create_ts = peewee.DateTimeField()
     expire_ts = peewee.DateTimeField(null=True)
+    is_password = peewee.BooleanField()
     user = peewee.ForeignKeyField(User, backref="secrets")
 
     class Meta:
@@ -38,20 +39,10 @@ class Secret(Base, OptionallyExpiryMixin):
         name: str,
     ) -> Optional["Secret"]:
         try:
-            return Secret._select_by_name(name).where(
+            query = Secret._select_by_name(name)
+            query = query.where(
                 Secret.is_valid(server_ts) & User.is_valid(server_ts)
-            ).get()
+            )
+            return query.get()
         except peewee.DoesNotExist:
             return None
-
-    def into_dict(self, value: Optional[str] = None):
-        as_dict = {
-            "name": self.name,
-            "create_ts": self.create_ts,
-            "user_name": self.user.name,
-        }
-        if self.expire_ts is not None:
-            as_dict["expire_ts"] = self.expire_ts
-        if value is not None:
-            as_dict["value"] = value
-        return as_dict

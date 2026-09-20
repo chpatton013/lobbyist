@@ -14,8 +14,8 @@ def create_user():
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
-    name = validation.required_field_username("name")
-    secret = validation.required_field_secret("secret")
+    user_name = validation.required_field_username("name")
+    secret_plain = validation.required_field_secret("secret")
     access_token_lifetime = validation.optional_field_access_token_lifetime(
         "access_token_lifetime"
     )
@@ -25,8 +25,8 @@ def create_user():
 
     response = user.create_user(
         create_ts=server_ts,
-        name=name,
-        secret_plain=secret,
+        user_name=user_name,
+        secret_plain=secret_plain,
         access_token_lifetime=access_token_lifetime,
         refresh_token_lifetime=refresh_token_lifetime,
     )
@@ -35,40 +35,40 @@ def create_user():
 
 
 @APP.route("/user/<name>", methods=["GET"])
-def read_user(name: str):
+def read_user(user_name: str):
     logging.debug("views.user.read_user")
 
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
     try:
-        access_token = validation.validate_authentication_bearer()
+        auth_access_token_value = validation.validate_authentication_bearer()
     except error.UnauthorizedError:
-        access_token = None
+        auth_access_token_value = None
 
     response = user.read_user(
         server_ts=server_ts,
-        name=name,
-        access_token_value=access_token,
+        auth_access_token_value=auth_access_token_value,
+        user_name=user_name,
     )
 
     return (response.into_dict(), 200)
 
 
 @APP.route("/user/<name>", methods=["PATCH"])
-def update_user(name: str):
+def update_user(user_name: str):
     logging.debug("views.user.update_user")
 
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
-    access_token = validation.validate_authentication_bearer()
+    auth_access_token_value = validation.validate_authentication_bearer()
     expire_ts = validation.optional_field_expire_ts("expire_ts")
 
     response = user.update_user(
         server_ts=server_ts,
-        name=name,
-        access_token_value=access_token,
+        auth_access_token_value=auth_access_token_value,
+        user_name=user_name,
         expire_ts=expire_ts,
     )
 
@@ -76,18 +76,18 @@ def update_user(name: str):
 
 
 @APP.route("/user/<name>", methods=["DELETE"])
-def delete_user(name: str):
+def delete_user(user_name: str):
     logging.debug("views.user.delete_user")
 
     server_ts = datetime.datetime.utcnow()
 
     validation.validate_accept()
-    access_token = validation.validate_authentication_bearer()
+    auth_access_token_value = validation.validate_authentication_bearer()
 
     response = user.delete_user(
         server_ts=server_ts,
-        name=name,
-        access_token_value=access_token,
+        auth_access_token_value=auth_access_token_value,
+        user_name=user_name,
     )
 
     return (response.into_dict(), 200)

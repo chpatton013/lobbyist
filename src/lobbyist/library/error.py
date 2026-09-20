@@ -42,19 +42,24 @@ class UnauthorizedError(ClientError):
 
 class ForbiddenError(ClientError):
     def __init__(self, description: str):
-        super().__init__(403, "", description)
+        super().__init__(403, "forbidden", description)
 
 
 class NotFoundError(ClientError):
     def __init__(self, description: str):
-        super().__init__(404, "", description)
+        super().__init__(404, "not_found", description)
 
 
 class NotAcceptableError(ClientError):
     def __init__(self, **context):
-        super().__init__(406, "", "cannot meet accept constraints", context)
+        super().__init__(
+            406,
+            "not_acceptable",
+            "cannot meet accept constraints",
+            context,
+        )
 
 
 class ConflictError(ClientError):
     def __init__(self, **context):
-        super().__init__(409, "", "integrity constraint failure", context)
+        super().__init__(409, "conflict", "integrity constraint failure", context)

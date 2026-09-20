@@ -5,59 +5,27 @@ from typing import Any, Mapping, Optional, Tuple
 
 import peewee
 
+from .auth import _authorize_access_token
 from ..library import crypto, db, validation
 from ..library.config import Range, config
-from ..library.error import ConflictError, ForbiddenError
+from ..library.error import BadRequestError, ConflictError, ForbiddenError
 from ..models.auth import AccessToken
 from ..models.secret import Secret
 from ..models.user import User
+from ..responses.secret import SecretResponse
 
 DB = db.db()
-
-# TODO: make into_dict_transitive functions for all models
-# consider pulling into_dict out of the model and putting it where ever the
-# transitive version goes. it can't go on the model because there would be a
-# recursive import between them.
-# maybe make a "responses" module for these?
-# will probably also want to make a "factory" module then.
-
-
-class CreateSecretResponse:
-    def __init__(self, secret: Secret, value: str):
-        self.secret = secret
-        self.value = value
-
-    def into_dict(self):
-        return {
-            "secret": self.secret.into_dict(self.value),
-        }
-
-
-class ReadSecretResponse:
-    def __init__(self, secret: Secret):
-        self.secret = secret
-
-    def into_dict(self):
-        return {
-            "secret": self.secret.into_dict(),
-        }
 
 
 @DB.atomic()
 def create_secret(
     create_ts: datetime.datetime,
-    access_token_value: str,
+    auth_access_token_value: str,
     expire_ts: Optional[datetime.datetime],
-) -> CreateSecretResponse:
+) -> SecretResponse:
     logging.debug("controllers.secret.create_secret")
 
-    access_token = AccessToken.select_valid_by_value(
-        create_ts,
-        access_token_value,
-    )
-    if not access_token:
-        raise ForbiddenError("token is not authorized")
-
+    access_token = _authorize_access_token(create_ts, auth_access_token_value)
     secret_name = crypto.make_secret_string(config().secret_name_entropy)
     secret_plain = crypto.make_secret_string(config().secret_value_entropy)
     secret_hash = crypto.hash_secret(secret_plain)
@@ -67,42 +35,36 @@ def create_secret(
         secret_hash,
         create_ts,
         expire_ts,
+        False,  # is_password
         access_token.secret.user,
     )
 
-    return CreateSecretResponse(secret, secret_plain)
+    return SecretResponse(secret, secret_plain)
 
 
 @DB.atomic()
 def read_secret(
     server_ts: datetime.datetime,
-    name: str,
-    access_token_value: Optional[str],
-) -> ReadSecretResponse:
+    auth_access_token_value: str,
+    secret_name: str,
+) -> SecretResponse:
     logging.debug("controllers.secret.read_secret")
 
-    secret, _, authorized = _authorize(server_ts, name, access_token_value)
-
-    if not authorized:
-        raise ForbiddenError("cannot read secret")
-
-    return ReadSecretResponse(secret)
+    secret = _authorize_secret(server_ts, auth_access_token_value, secret_name)
+    return SecretResponse(secret)
 
 
 @DB.atomic()
 def update_secret(
-    server_ts: datetime.datetime, name: str, access_token_value: str,
+    server_ts: datetime.datetime, auth_access_token_value: str, secret_name: str,
     **fields: Mapping[str, Any]
-) -> ReadSecretResponse:
+) -> SecretResponse:
     logging.debug("controllers.secret.update_secret")
 
-    secret, _, authorized = _authorize(server_ts, name, access_token_value)
-
-    if not authorized:
-        raise ForbiddenError("cannot update secret")
+    secret = _authorize_secret(server_ts, auth_access_token_value, secret_name)
 
     if "value" in fields:
-        if name != secret.user.name:
+        if secret_name != secret.user.name:
             raise BadRequestError(
                 "cannot change secret",
                 fields={"value": "secret value must not be set"},
@@ -114,7 +76,7 @@ def update_secret(
             secret.hash = crypto.hash_secret(secret_plain)
 
     if "expire_ts" in fields:
-        if name == secret.user.name:
+        if secret_name == secret.user.name:
             raise BadRequestError(
                 "cannot expire password",
                 fields={"expire_ts": "expire time must not be set"},
@@ -133,33 +95,36 @@ def update_secret(
     if fields:
         secret.save()
 
-    return ReadSecretResponse(secret)
+    return SecretResponse(secret)
 
 
 @DB.atomic()
 def delete_secret(
     server_ts: datetime.datetime,
-    name: str,
-    access_token_value: str,
-) -> ReadSecretResponse:
+    auth_access_token_value: str,
+    secret_name: str,
+) -> SecretResponse:
     logging.debug("controllers.secret.update_secret")
 
-    secret, _, authorized = _authorize(server_ts, name, access_token_value)
+    secret = _authorize_secret(server_ts, auth_access_token_value, secret_name)
+    if secret.is_password:
+        raise BadRequestError(
+            "cannot delete secret",
+            records={"is_password": "passwords cannot be deleted"},
+        )
 
-    if not authorized:
-        raise ForbiddenError("cannot update secret")
-
-    secret.expire_ts = expire_ts
+    secret.expire_ts = server_ts
     secret.save()
 
-    return ReadSecretResponse(secret)
+    return SecretResponse(secret)
 
 
 def _create_secret(
-    name: str,
+    secret_name: str,
     hash: str,
     create_ts: datetime.datetime,
     expire_ts: Optional[datetime.datetime],
+    is_password: bool,
     user: User,
 ) -> Secret:
     logging.debug("controllers.secret._create_secret")
@@ -167,33 +132,25 @@ def _create_secret(
     try:
         return Secret.create(
             id=uuid.uuid4(),
-            name=name,
+            name=secret_name,
             hash=hash,
             create_ts=create_ts,
             expire_ts=expire_ts,
+            is_password=is_password,
             user=user,
         )
     except peewee.IntegrityError:
         raise ConflictError(user={"name": "secret names must be unique"})
 
 
-def _authorize(
+def _authorize_secret(
     server_ts: datetime.datetime,
-    name: str,
-    access_token_value: str,
-) -> Tuple[Optional[Secret], Optional[AccessToken], bool]:
-    secret = Secret.select_by_name(server_ts, name)
+    auth_access_token_value: str,
+    secret_name: str,
+) -> Secret:
+    access_token = _authorize_access_token(server_ts, auth_access_token_value)
+    secret = Secret.select_by_name(server_ts, secret_name)
+    if not secret or (secret.user.id != access_token.secret.user.id):
+        raise ForbiddenError("cannot access secret")
 
-    if access_token_value is None:
-        access_token = None
-    else:
-        access_token = AccessToken.select_valid_by_value(
-            server_ts,
-            access_token_value,
-        )
-
-    authorized = secret and access_token and (
-        secret.id == access_token.secret.id
-    )
-
-    return (user, access_token, authorized)
+    return secret

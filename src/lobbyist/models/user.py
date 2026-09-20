@@ -23,13 +23,3 @@ class User(Base, OptionallyExpiryMixin):
             return User.select().where(User.name == name).get()
         except peewee.DoesNotExist:
             return None
-
-    def into_dict(self):
-        as_dict = {
-            "id": self.id,
-            "name": self.name,
-            "create_ts": self.create_ts,
-        }
-        if self.expire_ts is not None:
-            as_dict["expire_ts"] = self.expire_ts
-        return as_dict

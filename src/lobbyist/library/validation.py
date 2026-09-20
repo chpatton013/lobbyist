@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 import flask
 
-from .config import Range, config
+from .config import Range, RangeWithDefault, config
 from .error import BadRequestError, NotAcceptableError, UnauthorizedError
 
 
@@ -156,7 +156,7 @@ def validate_secret(key: str, secret: str):
 
 
 def validate_expire_time(
-    key: str, expire_ts: datetime.datetime, allowed_range: Range
+    key: str, expire_ts: datetime.datetime, allowed_range: Range[datetime.datetime]
 ):
     if not allowed_range.contains(expire_ts):
         raise BadRequestError(
@@ -169,13 +169,13 @@ def validate_expire_time(
 
 def optional_field_access_token_lifetime(
     key: str,
-) -> Optional[datetime.timedelta]:
+) -> datetime.timedelta:
     return _optional_field_token_lifetime(key, config().access_token_lifetime)
 
 
 def optional_field_refresh_token_lifetime(
     key: str,
-) -> Optional[datetime.timedelta]:
+) -> datetime.timedelta:
     return _optional_field_token_lifetime(key, config().refresh_token_lifetime)
 
 
@@ -206,8 +206,8 @@ def _parse_authentication_basic(payload) -> Tuple[str, bytes]:
 
 def _optional_field_token_lifetime(
     key: str,
-    config_lifetime: Range,
-) -> Optional[datetime.timedelta]:
+    config_lifetime: RangeWithDefault[datetime.timedelta],
+) -> datetime.timedelta:
     token_lifetime = flask.request.form.get(key)
     if not token_lifetime:
         return config_lifetime.default

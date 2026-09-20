@@ -23,10 +23,9 @@ class AccessToken(Base, ExpiryMixin):
 
     @staticmethod
     def _select_by_value(value: str) -> peewee.ModelSelect:
-        return AccessToken.select(AccessToken, Secret,
-                                  User).join(Secret).join(User).where(
-                                      AccessToken.value == value
-                                  )
+        query = AccessToken.select(AccessToken, Secret, User)
+        query = query.join(Secret).join(User)
+        return query.where(AccessToken.value == value)
 
     @staticmethod
     def select_by_value(value: str) -> Optional["AccessToken"]:
@@ -41,20 +40,14 @@ class AccessToken(Base, ExpiryMixin):
         value: str,
     ) -> Optional["AccessToken"]:
         try:
-            return AccessToken._select_by_value(value).where(
+            query = AccessToken._select_by_value(value)
+            query = query.where(
                 AccessToken.is_valid(server_ts) & Secret.is_valid(server_ts) &
                 User.is_valid(server_ts)
-            ).get()
+            )
+            return query.get()
         except peewee.DoesNotExist:
             return None
-
-    def into_dict(self):
-        return {
-            "value": self.value,
-            "create_ts": self.create_ts,
-            "expire_ts": self.expire_ts,
-            "secret_name": self.secret.name,
-        }
 
 
 class RefreshToken(Base, ExpiryMixin):
@@ -72,11 +65,9 @@ class RefreshToken(Base, ExpiryMixin):
 
     @staticmethod
     def _select_by_value(value: str) -> peewee.ModelSelect:
-        return RefreshToken.select(RefreshToken, AccessToken, Secret,
-                                   User).join(AccessToken
-                                              ).join(Secret).join(User).where(
-                                                  RefreshToken.value == value
-                                              )
+        query = RefreshToken.select(RefreshToken, AccessToken, Secret, User)
+        query = query.join(AccessToken).join(Secret).join(User)
+        return query.where(RefreshToken.value == value)
 
     @staticmethod
     def select_by_value(value: str) -> Optional["RefreshToken"]:
@@ -91,11 +82,13 @@ class RefreshToken(Base, ExpiryMixin):
         value: str,
     ) -> Optional["RefreshToken"]:
         try:
-            return RefreshToken._select_by_value(value).where(
+            query = RefreshToken._select_by_value(value)
+            query = query.where(
                 RefreshToken.is_valid(server_ts) &
                 AccessToken.is_valid(server_ts) & Secret.is_valid(server_ts) &
                 User.is_valid(server_ts)
-            ).get()
+            )
+            return query.get()
         except peewee.DoesNotExist:
             return None
 
